@@ -1,7 +1,5 @@
 package nuist.qlib.dss.net.vo;
 
-import java.util.List;
-
 import lombok.Data;
 import nuist.qlib.dss.constant.MessageType;
 import nuist.qlib.dss.constant.RoleType;

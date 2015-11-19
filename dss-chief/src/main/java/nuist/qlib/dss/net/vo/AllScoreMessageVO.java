@@ -4,12 +4,17 @@ import java.util.Map;
 
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import nuist.qlib.dss.constant.MessageType;
 import nuist.qlib.dss.constant.RoleType;
 
 @Data
 @EqualsAndHashCode(callSuper = false)
 public class AllScoreMessageVO extends BaseMessageVO {
 
+	public AllScoreMessageVO(){
+		this.setMessageType(MessageType.ALLSOCRE);
+	}
+	
 	/**
 	 * 艺术得分01
 	 */
@@ -89,5 +94,5 @@ public class AllScoreMessageVO extends BaseMessageVO {
 	 * 各裁判无效分次数
 	 */
 	private Map<RoleType, Integer> invaildNum;
-
+	
 }

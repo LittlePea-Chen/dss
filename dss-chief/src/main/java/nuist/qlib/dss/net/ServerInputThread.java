@@ -31,7 +31,7 @@ public class ServerInputThread implements Runnable {
 	// tcp/ip协议
 	private Socket socket;
 	private Logger logger;
-	private static final String regex = "\\d+";
+	private static final String REGEX = "\\d+";
 
 	public ServerInputThread(Socket socket) {
 		logger = Logger.getLogger(ServerInputThread.class.getName());
@@ -65,14 +65,13 @@ public class ServerInputThread implements Runnable {
 				return;
 			}
 			// 角色编号
-			int roleNum;
-			Pattern pattern = Pattern.compile(regex);
+			int roleNum = 0;
+			Pattern pattern = Pattern.compile(REGEX);
 			Matcher matcher = pattern.matcher(roleType.getKeyWord());
-			if (matcher.find()) {
+			while (matcher.find()) {
 				roleNum = Integer.parseInt(matcher.group());
-			} else {
-				return;
 			}
+			
 			// 根据角色和角色编号显示得分
 			if (roleType.isArtJudge()) {// 艺术打分
 				switch (roleNum) {

@@ -1,15 +1,14 @@
 package nuist.qlib.dss.net;
 
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.PrintWriter;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.MulticastSocket;
 
+import net.sf.json.JSONObject;
+import nuist.qlib.dss.constant.RoleType;
+import nuist.qlib.dss.net.util.NetPropertiesUtil;
+import nuist.qlib.dss.net.vo.IPMessageVO;
 import nuist.qlib.dss.util.ToolUtil;
 import android.util.Log;
 
@@ -44,48 +43,21 @@ public class ReceIP implements Runnable // 接收
 
 				String message = new String(packet.getData(), 0,
 						packet.getLength());
-				if(message.split("/")[0].contains("Editor")){// 接收记录员和裁判长的IP
-					ToolUtil.createDBConfig(path,message.split("/")[1]);
+				JSONObject jsonObject = JSONObject.fromObject(message);
+				IPMessageVO ipMessageVO = (IPMessageVO) JSONObject.toBean(
+						jsonObject, IPMessageVO.class);
+
+				RoleType roleType = ipMessageVO.getRoleType();
+				if (roleType == null) {
+					continue;
 				}
+				if (RoleType.EDITOR == roleType) {// 接收记录员的IP
+					ToolUtil.createDBConfig(path, ipMessageVO.getOriginalIp());
+				}
+
+				// 将接受的消息存入address.properties文件
+				NetPropertiesUtil.saveIPAddress(ipMessageVO, path);
 				Log.i(TAG, message);
-
-				try {
-					File file = new File(path, "Adress.txt");
-					FileWriter fw = new FileWriter(file, true);
-					PrintWriter pw = new PrintWriter(fw);
-					FileReader fr = new FileReader(file);
-					BufferedReader br = new BufferedReader(fr);
-					while (true) {
-						String messageTemp = br.readLine();
-						if (messageTemp == null) {
-							pw.println(message);
-							break;
-						} else if (messageTemp.equalsIgnoreCase(message)) {
-							break;
-						} else {
-							if (messageTemp.split("/")[0]
-									.equalsIgnoreCase(message.split("/")[0])||messageTemp.split("/")[1]
-											.equalsIgnoreCase(message.split("/")[1])) { // 更新更改的IP
-								fw.close();
-								pw.close();
-								fw = new FileWriter(file);
-								fw.write("");
-								pw = new PrintWriter(fw);
-								break;
-							} else {
-								continue;
-							}
-
-						}
-
-					}
-					pw.close();
-					fw.close();
-					br.close();
-					fr.close();
-				} catch (IOException e) {
-					e.printStackTrace();
-				}
 			}
 		} catch (Exception e) {
 			e.printStackTrace();

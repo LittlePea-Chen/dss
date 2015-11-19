@@ -31,4 +31,36 @@ public enum MessageType {
 	@Setter
 	@Getter
 	private String keyWord;
+
+	/**
+	 * 根据名称返回MessageType
+	 * 
+	 * @param name
+	 * @return
+	 * @since DSS 1.0
+	 */
+	public static MessageType praseName(String name) {
+		for (MessageType type : MessageType.values()) {
+			if (name != null && name.equalsIgnoreCase(type.getName())) {
+				return type;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * 根据关键字返回MessageType
+	 * 
+	 * @param name
+	 * @return
+	 * @since DSS 1.0
+	 */
+	public static MessageType praseKeyword(String keyword) {
+		for (MessageType type : MessageType.values()) {
+			if (keyword != null && keyword.equalsIgnoreCase(type.getKeyWord())) {
+				return type;
+			}
+		}
+		return null;
+	}
 }

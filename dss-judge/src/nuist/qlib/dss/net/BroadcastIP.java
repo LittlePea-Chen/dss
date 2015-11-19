@@ -8,7 +8,10 @@ import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.util.Enumeration;
 
+import net.sf.json.JSONObject;
 import nuist.qlib.dss.activity.LoginActivity;
+import nuist.qlib.dss.constant.RoleType;
+import nuist.qlib.dss.net.vo.IPMessageVO;
 import android.os.Handler;
 import android.util.Log;
 
@@ -25,9 +28,9 @@ public class BroadcastIP implements Runnable // 发送
 	private static int i = 0;
 	private int port;
 	private String host;
-	private String data;
 	public static Boolean Flag = true;
-//	private InetAddress addr;
+
+	// private InetAddress addr;
 
 	public BroadcastIP(MulticastSocket dsock, Handler ulHandler) {
 		this.dsock = dsock;
@@ -41,16 +44,25 @@ public class BroadcastIP implements Runnable // 发送
 		try {
 			while (Flag) {
 				String ip = getLocalIpAddress(); // 获取当前wifi的I平地址
-				data = LoginActivity.role + "/" + ip;
-				System.out.println(data);
 				if (ip != null && !ip.equals("null")) {
-					DatagramPacket dataPack = // 数据打包
-					new DatagramPacket(data.getBytes(), data.length(),
+					// 设置IP消息
+					IPMessageVO ipMessageVO = new IPMessageVO();
+					ipMessageVO.setRoleType(RoleType
+							.praseName(LoginActivity.role));
+					ipMessageVO.setOriginalIp(ip);
+					// 对象转json
+					JSONObject jsonObject = JSONObject.fromObject(ipMessageVO);
+					// json转字符串
+					String message = jsonObject.toString();
+
+					// 数据打包
+					DatagramPacket dataPack = new DatagramPacket(
+							message.getBytes(), message.length(),
 							InetAddress.getByName(host), // 广播
 							port // 目标端口
 					);
 					dsock.send(dataPack);
-					Log.i(TAG, data);
+					Log.i(TAG, message);
 					if (i != 0) {
 						ulHandler.sendEmptyMessage(1);
 					}
@@ -72,25 +84,26 @@ public class BroadcastIP implements Runnable // 发送
 			dsock.close();
 		}
 	}
-	
-	public String getLocalIpAddress() {   
-        try {   
-            for (Enumeration<NetworkInterface> en = NetworkInterface   
-                    .getNetworkInterfaces(); en.hasMoreElements();) {   
-                NetworkInterface intf = en.nextElement();   
-                for (Enumeration<InetAddress> enumIpAddr = intf   
-                        .getInetAddresses(); enumIpAddr.hasMoreElements();) {   
-                    InetAddress inetAddress = enumIpAddr.nextElement();   
-                    if (!inetAddress.isLoopbackAddress()&& !inetAddress.isLinkLocalAddress()) {   
-                        return inetAddress.getHostAddress().toString();   
-                    }   
-                }   
-            }   
-        } catch (SocketException ex) {   
-            Log.e("WifiPreference IpAddress", ex.toString());   
-        }   
-        return null;   
-    }
+
+	public String getLocalIpAddress() {
+		try {
+			for (Enumeration<NetworkInterface> en = NetworkInterface
+					.getNetworkInterfaces(); en.hasMoreElements();) {
+				NetworkInterface intf = en.nextElement();
+				for (Enumeration<InetAddress> enumIpAddr = intf
+						.getInetAddresses(); enumIpAddr.hasMoreElements();) {
+					InetAddress inetAddress = enumIpAddr.nextElement();
+					if (!inetAddress.isLoopbackAddress()
+							&& !inetAddress.isLinkLocalAddress()) {
+						return inetAddress.getHostAddress().toString();
+					}
+				}
+			}
+		} catch (SocketException ex) {
+			Log.e("WifiPreference IpAddress", ex.toString());
+		}
+		return null;
+	}
 
 	public static int getI() {
 		return i;
@@ -98,5 +111,5 @@ public class BroadcastIP implements Runnable // 发送
 
 	public static void setI(int i) {
 		BroadcastIP.i = i;
-	}   
+	}
 }

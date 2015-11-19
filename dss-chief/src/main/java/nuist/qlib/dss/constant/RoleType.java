@@ -101,5 +101,21 @@ public enum RoleType {
 		}
 		return null;
 	}
+	
+	/**
+	 * 根据关键字返回RoleType
+	 * 
+	 * @param name
+	 * @return
+	 * @since DSS 1.0
+	 */
+	public static RoleType praseKeyword(String keyword) {
+		for (RoleType type : RoleType.values()) {
+			if (keyword != null && keyword.equalsIgnoreCase(type.getKeyWord())) {
+				return type;
+			}
+		}
+		return null;
+	}
 
 }

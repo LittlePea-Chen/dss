@@ -4,14 +4,26 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
+import net.sf.json.JSONObject;
+import nuist.qlib.dss.constant.MessageType;
+import nuist.qlib.dss.constant.RoleType;
+import nuist.qlib.dss.net.vo.AllScoreMessageVO;
+import nuist.qlib.dss.net.vo.BaseMessageVO;
+import nuist.qlib.dss.net.vo.CommandMessageVO;
+import nuist.qlib.dss.net.vo.MatchInfoMessageVO;
+import nuist.qlib.dss.net.vo.ScoreMessageVO;
 import android.app.Service;
 import android.content.Intent;
+import android.os.Bundle;
 import android.os.IBinder;
 
 public class ReceiveInforService extends Service {
 
 	private static final String TAG = "ReceiveInforService";
+	private static final String REGEX = "\\d+";
 	public static String units_name;
 	public static String category_name;
 	private ServerSocket serverSocket;
@@ -56,80 +68,105 @@ public class ReceiveInforService extends Service {
 				// 将输入流里的字节读到字节数组里，并返回读的字节数
 				int length = is.read(by);
 				// 将字节数组里的length个字节转换为字符串
-				if(length==-1){
+				if (length == -1) {
 					continue;
 				}
-				String str = new String(by, 0, length, "utf-8");
-				System.out.println("str"+str);
-				final String message[] = str.split("/");
-				System.out.println("mesage[0]:"+message[0]);
+
+				// 解析接收的信息
+				String message = new String(by, 0, length, "utf-8");
+				JSONObject jsonObject = JSONObject.fromObject(message);
+				BaseMessageVO baseMessageVO = (BaseMessageVO) JSONObject
+						.toBean(jsonObject, BaseMessageVO.class);
+
+				// 按不同场景生成intent
 				Intent intent = new Intent();
+				Bundle bundle = new Bundle();
 				intent.setAction("android.intent.action.MY_RECEIVER");
-				if (message[0].startsWith("art")) { // 接收艺术裁判打分
-					intent.putExtra("item", "artScore");
-					intent.putExtra("num", message[1]);
-					if (message[1].equalsIgnoreCase("01")) {
-						intent.putExtra("artScore1", message[2]);
-					} else if (message[1].equalsIgnoreCase("02")) {
-						intent.putExtra("artScore2", message[2]);
-					} else if (message[1].equalsIgnoreCase("03")) {
-						intent.putExtra("artScore3", message[2]);
-					} else if (message[1].equalsIgnoreCase("04")) {
-						intent.putExtra("artScore4", message[2]);
-					} 
-				} else if(message[0].startsWith("completion")){ // 接收完成裁判打分
-					intent.putExtra("item", "completionScore");
-					intent.putExtra("num", message[1]);
-					if (message[1].equalsIgnoreCase("01")) {
-						intent.putExtra("completionScore1", message[2]);
-					} else if (message[1].equalsIgnoreCase("02")) {
-						intent.putExtra("completionScore2", message[2]);
-					} else if (message[1].equalsIgnoreCase("03")) {
-						intent.putExtra("completionScore3", message[2]);
-					} else if (message[1].equalsIgnoreCase("04")) {
-						intent.putExtra("completionScore4", message[2]);
-					} 
-				} else if(message[0].startsWith("difficult")){ // 接收难度裁判打分
-					intent.putExtra("item", "difficult");
-					intent.putExtra("difficultScore", message[2]);
-					intent.putExtra("difficultSubScore", message[3]);
-				} else if(message[0].startsWith("Command")){ // 接收指令
-					intent.putExtra("item", "Command");
-					intent.putExtra("CommandContent", message[1]);
-				} else if (message[0].equalsIgnoreCase("infor1")) { // 接收编辑员发过来的消息
-					intent.putExtra("item", "infor1");
-					intent.putExtra("team_name", message[1]);
-					intent.putExtra("category_name", message[2]);
-				} else if (message[0].equalsIgnoreCase("infor2")) { // 接收编辑员发过来的消息
-					intent.putExtra("item", "infor2");
-					intent.putExtra("team_name", message[1]);					
-					intent.putExtra("category_name", message[2]);
-					intent.putExtra("match_name", message[3]);
-				} else if (message[0].equalsIgnoreCase("infor3")) { // 比赛结束
-					intent.putExtra("item", "infor3");
-				} else if (message[0].equalsIgnoreCase("all")) {// 接收编辑员发过来的成绩
-					intent.putExtra("item", "all");
-					intent.putExtra("artScore1", message[1]);
-					intent.putExtra("artScore2", message[2]);
-					intent.putExtra("artScore3", message[3]);
-					intent.putExtra("artScore4", message[4]);
-					intent.putExtra("artTotalScore", message[5]);
-					intent.putExtra("completionScore1", message[6]);
-					intent.putExtra("completionScore2", message[7]);
-					intent.putExtra("completionScore3", message[8]);
-					intent.putExtra("completionScore4", message[9]);
-					intent.putExtra("completionTotalScore", message[10]);
-					intent.putExtra("difficultScore", message[11]);
-					intent.putExtra("difficultSubScore", message[12]);
-					intent.putExtra("deductionSubScore", message[13]);
-					intent.putExtra("totalscore", message[14]);
+				MessageType messageType = baseMessageVO.getMessageType();
+				// 打分信息
+				if (MessageType.SCORE == messageType) {
+					forScoreIntent(jsonObject, intent);
+				} else if (MessageType.COMMAND == messageType) {
+					forCommandIntent(jsonObject, intent);
+				} else if (MessageType.MATCHINFO == messageType) {
+					forMatchInfoIntent(jsonObject, intent);
+				} else if (MessageType.ALLSOCRE == messageType) {
+					forAllScoreInfoIntent(jsonObject, intent);
 				}
+
 				sendBroadcast(intent);
 				socket.close();
 			}
 		} catch (IOException e) {
 			e.printStackTrace();
 		} // 监听端口号
+	}
+
+	private void forScoreIntent(JSONObject jsonObject, Intent intent) {
+		ScoreMessageVO scoreMessageVO = (ScoreMessageVO) JSONObject.toBean(
+				jsonObject, ScoreMessageVO.class);
+
+		// 角色类型
+		RoleType roleType = scoreMessageVO.getRoleType();
+		if (roleType == null) {
+			return;
+		}
+		// 角色编号
+		int roleNum = 0;
+		Pattern pattern = Pattern.compile(REGEX);
+		Matcher matcher = pattern.matcher(roleType.getKeyWord());
+		while (matcher.find()) {
+			roleNum = Integer.parseInt(matcher.group());
+		}
+
+		intent.putExtra("num", roleNum);
+		intent.putExtra("score", scoreMessageVO.getScore());
+		if (roleType.isArtJudge()) { // 接收艺术裁判打分
+			intent.putExtra("item", RoleType.ARTJUDGE01.getKeyWord());
+		} else if (roleType.isExecJudge()) { // 接收完成裁判打分
+			intent.putExtra("item", RoleType.EXECJUDGE01.getKeyWord());
+		} else if (roleType.isExecJudge()) { // 接收舞蹈裁判打分
+			intent.putExtra("item", RoleType.IMPJUDGE01.getKeyWord());
+		}
+	}
+
+	private void forCommandIntent(JSONObject jsonObject, Intent intent) {
+		CommandMessageVO commandMessageVO = (CommandMessageVO) JSONObject
+				.toBean(jsonObject, CommandMessageVO.class);
+
+		intent.putExtra("item", MessageType.COMMAND.getKeyWord());
+		intent.putExtra("CommandContent", commandMessageVO.getCommandType());
+	}
+
+	private void forMatchInfoIntent(JSONObject jsonObject, Intent intent) {
+		MatchInfoMessageVO matchInfoMessageVO = (MatchInfoMessageVO) JSONObject
+				.toBean(jsonObject, MatchInfoMessageVO.class);
+
+		intent.putExtra("item", MessageType.MATCHINFO.getKeyWord());
+		intent.putExtra("categoryName", matchInfoMessageVO.getMatchCategory());
+		intent.putExtra("matchName", matchInfoMessageVO.getMatchName());
+		intent.putExtra("matchUnit", matchInfoMessageVO.getMatchUnit());
+	}
+	
+	private void forAllScoreInfoIntent(JSONObject jsonObject, Intent intent) {
+		AllScoreMessageVO allScoreMessageVO = (AllScoreMessageVO) JSONObject.toBean(
+				jsonObject, AllScoreMessageVO.class);
+		
+		intent.putExtra("item", "all");
+		intent.putExtra(RoleType.ARTJUDGE01.getKeyWord(), allScoreMessageVO.getArtScore01());
+		intent.putExtra(RoleType.ARTJUDGE02.getKeyWord(), allScoreMessageVO.getArtScore02());
+		intent.putExtra(RoleType.ARTJUDGE03.getKeyWord(), allScoreMessageVO.getArtScore03());
+		intent.putExtra(RoleType.ARTJUDGE04.getKeyWord(), allScoreMessageVO.getArtScore04());
+		intent.putExtra("artTotalScore", allScoreMessageVO.getArtTotalScore());
+		intent.putExtra(RoleType.EXECJUDGE01.getKeyWord(), allScoreMessageVO.getExecScore01());
+		intent.putExtra(RoleType.EXECJUDGE02.getKeyWord(), allScoreMessageVO.getExecScore02());
+		intent.putExtra(RoleType.EXECJUDGE03.getKeyWord(), allScoreMessageVO.getExecScore03());
+		intent.putExtra(RoleType.EXECJUDGE04.getKeyWord(), allScoreMessageVO.getExecScore04());
+		intent.putExtra("execTotalScore", allScoreMessageVO.getExecTotalScore());
+		intent.putExtra(RoleType.IMPJUDGE01.getKeyWord(), allScoreMessageVO.getImpScore01());
+		intent.putExtra(RoleType.IMPJUDGE02.getKeyWord(), allScoreMessageVO.getImpScore02());
+		intent.putExtra("deductionSubScore", allScoreMessageVO.getSubScore());
+		intent.putExtra("totalscore", allScoreMessageVO.getTotalScore());
 	}
 
 	@Override

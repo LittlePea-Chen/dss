@@ -51,6 +51,9 @@ public class ReceIP implements Runnable // 接收
 				String message = new String(packet.getData(), 0,
 						packet.getLength());
 				JSONObject jsonObject = JSONObject.fromObject(message);
+				// 转bean时，枚举类虚先申明下，不然转换出错
+//				JSONUtils.getMorpherRegistry().registerMorpher(new EnumMorpher(MessageType.class));
+//				JSONUtils.getMorpherRegistry().registerMorpher(new EnumMorpher(RoleType.class));
 				IPMessageVO ipMessageVO = (IPMessageVO) JSONObject.toBean(
 						jsonObject, IPMessageVO.class);
 
@@ -78,7 +81,7 @@ public class ReceIP implements Runnable // 接收
 				}
 			}
 		} catch (IOException e) {
-			logger.error("加入广播组失败!");
+			logger.error("加入广播组失败!", e);
 			throw new RuntimeException("加入广播组失败!");
 		} finally {
 			if (receSocket != null) {

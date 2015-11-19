@@ -6,15 +6,17 @@
 package nuist.qlib.dss.activity;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.concurrent.FutureTask;
 import java.util.regex.Pattern;
 
-import nuist.qlib.dss.dao.IPDao;
+import nuist.qlib.dss.constant.MessageType;
 import nuist.qlib.dss.dao.LoginDao;
-import nuist.qlib.dss.net.SendMessage;
+import nuist.qlib.dss.net.MainClientOutputThread;
+import nuist.qlib.dss.net.util.NetPropertiesUtil;
+import nuist.qlib.dss.net.vo.ScoreMessageVO;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.ProgressDialog;
@@ -52,7 +54,6 @@ public class ScoreActivity extends Activity {
 	private TextView state_content;
 	private TextView score;
 	private Button send;
-	private IPDao ipDao;
 	private HandlerThread threadt;
 	private ProgressDialog loginOutdialog;
 	private boolean login = true;
@@ -64,38 +65,41 @@ public class ScoreActivity extends Activity {
 	private MyHandler handler;
 	private Runnable mBackgroundRunnable;
 	private Handler sendScoreHandler;
-	private String eL = "^[0-1](\\.\\d{0,2})?|2(\\.0{0,2})?$";//非负浮点数 ,且范围在[0,2]
-	private String eL2 = "^[0-3](\\.\\d{0,2})?|4(\\.0{0,2})?$";//非负浮点数 ,且范围在[0,4]
+	private MainClientOutputThread mainClientOutputThread = new MainClientOutputThread();
+	private String eL = "^[0-1](\\.\\d{0,2})?|2(\\.0{0,2})?$";// 非负浮点数
+																// ,且范围在[0,2]
+	private String eL2 = "^[0-3](\\.\\d{0,2})?|4(\\.0{0,2})?$";// 非负浮点数
+																// ,且范围在[0,4]
 	private Pattern pattern = Pattern.compile(eL);
-    private Pattern pattern2 = Pattern.compile(eL2);
+	private Pattern pattern2 = Pattern.compile(eL2);
 
 	protected void onCreate(Bundle savedInstanceState) {
 
 		super.onCreate(savedInstanceState);
-		
+
 		// 无标题模式
 		requestWindowFeature(Window.FEATURE_NO_TITLE);
-		
+
 		role = LoginActivity.role;
-		roleName=LoginActivity.roleName;
-		
-		if(role.contains("art")){
+		roleName = LoginActivity.roleName;
+
+		if (role.contains("art")) {
 			setContentView(R.layout.art_score);
-		} else if(role.contains("exec")){
+		} else if (role.contains("exec")) {
 			setContentView(R.layout.exec_score);
-		} else{
+		} else {
 			setContentView(R.layout.imp_score);
 		}
-		
+
 		units_content = (TextView) this.findViewById(R.id.units_content);
 		category_content = (TextView) this.findViewById(R.id.category_content);
 		role_content = (TextView) this.findViewById(R.id.role_content); // 身份信息
 		state_content = (TextView) this.findViewById(R.id.state_content); // 当前状态信息
-		
-		score = (TextView) this.findViewById(R.id.score); //裁判打分
-		send = (Button) this.findViewById(R.id.send); //发送按钮
+
+		score = (TextView) this.findViewById(R.id.score); // 裁判打分
+		send = (Button) this.findViewById(R.id.send); // 发送按钮
 		path = this.getFilesDir();
-		
+
 		role_content.setText(roleName); // 设置身份
 		state_content.setText("未打分"); // 初始化状态
 
@@ -105,22 +109,22 @@ public class ScoreActivity extends Activity {
 			filter = new IntentFilter();
 			filter.addAction("android.intent.action.MY_RECEIVER");
 			this.registerReceiver(receiver, filter); // 动态注册广播信息
-		}	
-		
+		}
+
 		send.setOnClickListener(new OnClickListener() {
 			@Override
 			public void onClick(View arg0) {
-				// TODO Auto-generated method stub	
+				// TODO Auto-generated method stub
 				scoreValue = score.getText().toString();
-				if(role.contains("imp")){
-					if(!pattern.matcher(scoreValue).matches()){//打分不符合要求
+				if (role.contains("imp")) {
+					if (!pattern.matcher(scoreValue).matches()) {// 打分不符合要求
 						Toast.makeText(ScoreActivity.this,
 								"请确保打分范围为0~2,且最多包含两位小数！", Toast.LENGTH_SHORT)
 								.show(); // 提示打分超出范围
 						return;
-					}					
+					}
 				} else {
-					if(!pattern2.matcher(scoreValue).matches()){
+					if (!pattern2.matcher(scoreValue).matches()) {
 						Toast.makeText(ScoreActivity.this,
 								"请确保打分范围为0~4,且最多包含两位小数！", Toast.LENGTH_SHORT)
 								.show(); // 提示打分超出范围
@@ -130,39 +134,18 @@ public class ScoreActivity extends Activity {
 				sendScoreHandler = new sendScoreHandler();
 				new Thread() {
 					public void run() {
-						try {
-							ipDao = new IPDao(path);
-							List<String> list = new ArrayList<String>();
-							String receiver[] = { "Editor" }; // 接收者名称(裁判长和记录员)
-							list = ipDao.getIP(receiver); // 获取IP
-							List<FutureTask<Integer>> tasks = new ArrayList<FutureTask<Integer>>();
-							int sum = 1;
+						ScoreMessageVO scoreMessageVO = new ScoreMessageVO();
+						scoreMessageVO.setScore(Float.valueOf(scoreValue));
+						// 将得分发送给记录员和高级裁判组
+						int sum = mainClientOutputThread.sendScore(
+								scoreMessageVO, path);
 
-							// 遍历获取的IP，并发送
-							if(list.size() == 0){//未获得ip
-								sum = 0;
-							} else{
-								for (int i = 0; i < list.size(); i++) {
-									FutureTask<Integer> task = new FutureTask<Integer>(
-											new SendMessage(list.get(i),scoreValue));
-									tasks.add(task);
-									new Thread(task).start();
-								}
-
-								for (FutureTask<Integer> task : tasks)
-									// 获取线程返回值
-									sum *= task.get();
-							}
-
-							// 发送消息
-							Message message = new Message();
-							// 发送消息与处理函数里一致
-							message.what = sum;
-							// 内部类调用外部类的变量
-							sendScoreHandler.sendMessage(message);
-						} catch (Exception e) {
-							Log.e(TAG, e.getMessage());
-						}
+						// 发送消息
+						Message message = new Message();
+						// 发送消息与处理函数里一致
+						message.what = sum;
+						// 内部类调用外部类的变量
+						sendScoreHandler.sendMessage(message);
 					}
 				}.start();
 			}
@@ -172,7 +155,7 @@ public class ScoreActivity extends Activity {
 	@Override
 	protected void onDestroy() {
 		// TODO Auto-generated method stub
-		
+
 		if (LoginActivity.BroadcastIPIntent != null) {
 			stopService(LoginActivity.BroadcastIPIntent); // 停止组播IP的服务
 		}
@@ -192,45 +175,36 @@ public class ScoreActivity extends Activity {
 		public void onReceive(Context context, Intent intent) {
 			Bundle bundle = intent.getExtras();
 			String item = bundle.getString("item");
-			if (item.equalsIgnoreCase("infor2")) { // 接收队伍信息
-				units_content.setText(bundle.getString("team_name"));
-				category_content.setText(bundle.getString("category_name"));
+			if (item.equalsIgnoreCase(MessageType.MATCHINFO.getKeyWord())) { // 接收队伍信息
+				units_content.setText(bundle.getString("matchUnit"));
+				category_content.setText(bundle.getString("categoryName"));
 				score.setEnabled(true);
 				send.setEnabled(true);
-				score.setText("");			
+				score.setText("");
 				state_content.setText("未打分");
-			}else if(item.equalsIgnoreCase("Command")){
-				if(bundle.getString("CommandContent").equals("up")){
+			} else if (item.equalsIgnoreCase(MessageType.COMMAND.getKeyWord())) {
+				if (bundle.getString("CommandContent").equals("up")) {
 					state_content.setText("需调分");
 					ImageView img = new ImageView(ScoreActivity.this);
 					img.setImageResource(R.drawable.up);
-					new AlertDialog.Builder(ScoreActivity.this)
-					.setTitle("提示")
-					.setView(img)
-					.setPositiveButton("确定", null)
-					.show();
-				}else if(bundle.getString("CommandContent").equals("down")){
+					new AlertDialog.Builder(ScoreActivity.this).setTitle("提示")
+							.setView(img).setPositiveButton("确定", null).show();
+				} else if (bundle.getString("CommandContent").equals("down")) {
 					state_content.setText("需调分");
 					ImageView img = new ImageView(ScoreActivity.this);
 					img.setImageResource(R.drawable.down);
-					new AlertDialog.Builder(ScoreActivity.this)
-					.setTitle("提示")
-					.setView(img)
-					.setPositiveButton("确定", null)
-					.show();
-				}else{
+					new AlertDialog.Builder(ScoreActivity.this).setTitle("提示")
+							.setView(img).setPositiveButton("确定", null).show();
+				} else {
 					state_content.setText("已打分");
 					ImageView img = new ImageView(ScoreActivity.this);
 					img.setImageResource(R.drawable.ok);
-					new AlertDialog.Builder(ScoreActivity.this)
-					.setTitle("提示")
-					.setView(img)
-					.setPositiveButton("确定", null)
-					.show();
+					new AlertDialog.Builder(ScoreActivity.this).setTitle("提示")
+							.setView(img).setPositiveButton("确定", null).show();
 					return;
 				}
 				score.setEnabled(true);
-				send.setEnabled(true);				
+				send.setEnabled(true);
 			}
 		}
 	}
@@ -311,48 +285,48 @@ public class ScoreActivity extends Activity {
 			return super.onKeyDown(keyCode, event);
 		}
 	}
-	
+
 	/*
 	 * 打分之后更新UI
 	 */
 	private class sendScoreHandler extends Handler {
 		public void handleMessage(Message msg) {
 			switch (msg.what) {
-			case 0: 
+			case 0:
 				score.setEnabled(true);
 				send.setEnabled(true);
-				score.setText(""); 
+				score.setText("");
 				state_content.setText("未打分");
-				new AlertDialog.Builder(ScoreActivity.this)
-						.setTitle("提示")
+				new AlertDialog.Builder(ScoreActivity.this).setTitle("提示")
 						.setMessage("未获得接收地址，请休息片刻！")
-						.setPositiveButton("确定", null)
-						.show(); // 提示发送失败
+						.setPositiveButton("确定", null).show(); // 提示发送失败
 				break;
 			case 1:
 				score.setEnabled(false);
 				send.setEnabled(false);
 				state_content.setText("已打分");
-				Toast.makeText(ScoreActivity.this, "打分成功",
-						Toast.LENGTH_SHORT).show(); // 提示发送成功
+				Toast.makeText(ScoreActivity.this, "打分成功", Toast.LENGTH_SHORT)
+						.show(); // 提示发送成功
 				break;
 			case -1:
-				ipDao.clearIP();// 清空配置文件
+				try {
+					NetPropertiesUtil.clearAll(path);
+				} catch (IOException e) {
+					Log.e(TAG, e.getMessage());
+				}// 清空配置文件
 				score.setEnabled(true);
 				send.setEnabled(true);
 				score.setText(""); // 发送完清空内容
 				state_content.setText("未打分");
-				new AlertDialog.Builder(ScoreActivity.this)
-						.setTitle("提示")
-						.setMessage("发送失败，请重发")
-						.setPositiveButton("确定", null)
+				new AlertDialog.Builder(ScoreActivity.this).setTitle("提示")
+						.setMessage("发送失败，请重发").setPositiveButton("确定", null)
 						.show(); // 提示发送失败
 				break;
 			}
 			super.handleMessage(msg);
 		}
-	}; 
-	
+	};
+
 	private class MyHandler extends Handler {
 		private boolean isStop = false;
 
